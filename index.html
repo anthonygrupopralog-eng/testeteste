@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚀 Sistema Profissional CT-e</title>
+
+<!-- LIBS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+
+<style>
+body{
+  font-family:'Segoe UI';
+  background: linear-gradient(135deg,#0f172a,#1e293b);
+  color:#fff;
+  padding:20px;
+}
+
+h1{margin-bottom:20px}
+
+.container{
+  display:flex;
+  gap:20px;
+}
+
+.drop{
+  flex:1;
+  border:2px dashed #475569;
+  padding:40px;
+  text-align:center;
+  border-radius:12px;
+  cursor:pointer;
+  transition:0.3s;
+}
+
+.drop:hover{
+  background:#1e293b;
+  transform:scale(1.03);
+}
+
+button{
+  padding:10px 15px;
+  border:none;
+  border-radius:8px;
+  background:linear-gradient(90deg,#2563eb,#3b82f6);
+  color:#fff;
+  cursor:pointer;
+  box-shadow:0 4px 10px rgba(0,0,0,0.3);
+}
+
+button:hover{
+  transform:scale(1.05);
+}
+
+.acoes{
+  margin:20px 0;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:20px;
+  background:#0f172a;
+  border-radius:10px;
+  overflow:hidden;
+}
+
+th,td{
+  padding:8px;
+  border-bottom:1px solid #333;
+}
+
+th{
+  background:#1e293b;
+}
+
+.idr{color:#f87171;font-weight:bold}
+
+.status{
+  margin-top:10px;
+  font-size:14px;
+  color:#94a3b8;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🚀 Sistema CT-e / MDF-e</h1>
+
+<div class="container">
+  <div class="drop" id="dropCTE">📄 Arraste CT-e aqui</div>
+  <div class="drop" id="dropMDFE">🚚 Arraste MDF-e aqui</div>
+</div>
+
+<div class="acoes">
+  <button id="btnProcessar">Processar</button>
+  <button id="btnExcel">Excel</button>
+  <button id="btnZipCTE">ZIP CT-e</button>
+  <button id="btnZipMDFE">ZIP MDF-e</button>
+  <button id="btnJuntar">Juntar por Motorista</button>
+  <button onclick="verHistorico()">📜 Histórico</button>
+  <button id="btnLimpar">Limpar</button>
+</div>
+
+<div class="status" id="status">Aguardando...</div>
+
+<table>
+<thead>
+<tr>
+<th>Tipo</th>
+<th>CTE</th>
+<th>ID</th>
+<th>Motorista</th>
+<th>Novo Nome</th>
+</tr>
+</thead>
+<tbody id="resultado"></tbody>
+</table>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+let arquivos = { cte:[], mdfe:[] };
+let resultados=[];
+
+// HISTÓRICO
+function salvarHistorico(dados){
+  let hist = JSON.parse(localStorage.getItem("historico") || "[]");
+
+  hist.unshift({
+    data:new Date().toLocaleString(),
+    total:dados.length,
+    arquivos:dados.map(d=>d.novoNome)
+  });
+
+  localStorage.setItem("historico", JSON.stringify(hist.slice(0,20)));
+}
+
+function verHistorico(){
+  let hist = JSON.parse(localStorage.getItem("historico") || "[]");
+
+  let texto="📜 HISTÓRICO\n\n";
+
+  hist.forEach((h,i)=>{
+    texto += `#${i+1} - ${h.data}\nArquivos:${h.total}\n\n`;
+  });
+
+  alert(texto || "Sem histórico");
+}
+
+// DRAG
+function setupDrop(id,tipo){
+  const el=document.getElementById(id);
+
+  el.addEventListener("dragover",e=>{
+    e.preventDefault();
+    el.style.background="#334155";
+  });
+
+  el.addEventListener("dragleave",()=>el.style.background="");
+
+  el.addEventListener("drop",e=>{
+    e.preventDefault();
+    el.style.background="";
+
+    const files=[...e.dataTransfer.files].filter(f=>f.name.endsWith(".pdf"));
+    arquivos[tipo].push(...files);
+
+    status.innerText = `${files.length} arquivo(s) adicionados em ${tipo}`;
+  });
+}
+
+setupDrop("dropCTE","cte");
+setupDrop("dropMDFE","mdfe");
+
+// EXTRAIR
+async function extrairTexto(file){
+  const buffer=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buffer}).promise;
+
+  let t="";
+  for(let i=1;i<=pdf.numPages;i++){
+    const p=await pdf.getPage(i);
+    const c=await p.getTextContent();
+    t+=c.items.map(i=>i.str).join(" ");
+  }
+  return t;
+}
+
+function limpar(s){
+  return s.replace(/[\\/:*?"<>|]/g,"").trim();
+}
+
+// PROCESSAR
+btnProcessar.onclick=async()=>{
+  resultados=[];
+  resultado.innerHTML="";
+  btnProcessar.innerText="Processando...";
+  status.innerText="Lendo PDFs...";
+
+  for(let tipo in arquivos){
+    for(let f of arquivos[tipo]){
+      try{
+        let texto=await extrairTexto(f);
+
+        let cte=(texto.match(/NÚMERO\s+(\d+)/i)||[])[1]||"0";
+
+        let m=texto.match(/(IDR?)\s+([A-Z0-9\-]+)/i);
+        let tipoId=m?m[1]:"ID";
+        let id=m?m[2]:"SEM_ID";
+
+        let motorista=(texto.match(/Motorista:\s(.*?)\s*-/i)||[])[1]||"SEM";
+        motorista=limpar(motorista);
+
+        let nome=`CTE ${cte} - ${tipoId} ${id} - ${motorista}.pdf`;
+
+        resultados.push({tipo,cte,tipoId,id,motorista,arquivo:f,nome});
+
+      }catch(e){console.log(e);}
+    }
+  }
+
+  salvarHistorico(resultados);
+  render();
+
+  btnProcessar.innerText="✅ Concluído";
+  status.innerText=`${resultados.length} arquivos processados`;
+};
+
+// TABELA
+function render(){
+  resultado.innerHTML="";
+  resultados.forEach(r=>{
+    resultado.innerHTML+=`
+    <tr>
+      <td>${r.tipo}</td>
+      <td>${r.cte}</td>
+      <td class="${r.tipoId==='IDR'?'idr':''}">
+        ${r.tipoId} ${r.id}
+      </td>
+      <td>${r.motorista}</td>
+      <td>${r.nome}</td>
+    </tr>`;
+  });
+}
+
+// ZIP
+async function baixar(tipo){
+  const zip=new JSZip();
+
+  for(let r of resultados.filter(x=>x.tipo===tipo)){
+    const b=await r.arquivo.arrayBuffer();
+    zip.file(r.nome,b);
+  }
+
+  const blob=await zip.generateAsync({type:"blob"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=tipo+".zip";
+  a.click();
+}
+
+btnZipCTE.onclick=()=>baixar("cte");
+btnZipMDFE.onclick=()=>baixar("mdfe");
+
+// EXCEL
+btnExcel.onclick=()=>{
+  const dados=resultados.map(r=>({
+    Tipo:r.tipo,
+    CTE:r.cte,
+    ID:r.tipoId+" "+r.id,
+    Motorista:r.motorista,
+    Nome:r.nome
+  }));
+
+  const ws=XLSX.utils.json_to_sheet(dados);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Dados");
+  XLSX.writeFile(wb,"CTEs.xlsx");
+};
+
+// JUNTAR
+btnJuntar.onclick=async()=>{
+  const { PDFDocument } = PDFLib;
+  let grupos={};
+
+  resultados.forEach(r=>{
+    if(!grupos[r.motorista]) grupos[r.motorista]=[];
+    grupos[r.motorista].push(r);
+  });
+
+  for(let m in grupos){
+    const pdfFinal=await PDFDocument.create();
+
+    for(let item of grupos[m]){
+      const pdf=await PDFDocument.load(await item.arquivo.arrayBuffer());
+      const pags=await pdfFinal.copyPages(pdf,pdf.getPageIndices());
+      pags.forEach(p=>pdfFinal.addPage(p));
+    }
+
+    const bytes=await pdfFinal.save();
+
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([bytes]));
+    a.download=`CTEs ${m}.pdf`;
+    a.click();
+  }
+};
+
+// LIMPAR
+btnLimpar.onclick=()=>{
+  arquivos={cte:[],mdfe:[]};
+  resultados=[];
+  resultado.innerHTML="";
+  status.innerText="Limpo";
+};
+</script>
+
+</body>
+</html>
