@@ -3,89 +3,66 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🚀 Sistema CT-e Profissional</title>
 
-<!-- LIBS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+<title>Sistema CT-e</title>
+
+<!-- LIBS CORRETAS -->
+/pdf.min.js"></script>
+10.1/jszip.min.js"></script>
+.5/xlsx.full.min.js"></script>
+"></script>
 
 <style>
 body{
-  font-family:'Segoe UI';
-  background:linear-gradient(135deg,#0f172a,#1e293b);
+  font-family: Arial;
+  background:#0f172a;
   color:#fff;
   padding:20px;
 }
-h1{margin-bottom:20px}
 
-/* DASHBOARD */
-.dashboard{display:flex;gap:15px;margin-bottom:15px}
-.card{
-  flex:1;
-  background:#1e293b;
-  padding:15px;
-  border-radius:10px;
-  text-align:center;
-}
-.card h2{margin:0;font-size:26px}
-.card span{font-size:12px;color:#94a3b8}
-
-/* AREA */
 .drop{
-  border:2px dashed #475569;
+  border:2px dashed #555;
   padding:40px;
   text-align:center;
-  border-radius:12px;
   cursor:pointer;
-  transition:0.3s;
+  margin-bottom:10px;
 }
-.drop:hover{background:#1e293b;transform:scale(1.02)}
 
 button{
   margin:5px;
   padding:10px;
-  border:none;
-  border-radius:6px;
   background:#2563eb;
   color:#fff;
-  cursor:pointer;
+  border:none;
 }
-button:hover{background:#1d4ed8}
 
-/* TABLE */
-table{width:100%;border-collapse:collapse;margin-top:15px}
-th,td{padding:8px;border-bottom:1px solid #333}
-th{background:#1e293b}
+table{
+  width:100%;
+  margin-top:10px;
+  border-collapse:collapse;
+}
 
-.idr{color:#f87171;font-weight:bold}
+td,th{
+  padding:8px;
+  border-bottom:1px solid #333;
+}
+
+.idr{color:red}
 .erro{background:#7f1d1d}
-
-.hist{margin-top:20px;background:#1e293b;padding:10px;border-radius:10px}
 </style>
 </head>
 
 <body>
 
-<h1>🚀 Sistema Inteligente de CT-e</h1>
+<h1>Sistema CT-e (FUNCIONAL)</h1>
 
-<div class="dashboard">
-  <div class="card"><h2 id="tot">0</h2><span>Total</span></div>
-  <div class="card"><h2 id="id">0</h2><span>ID</span></div>
-  <div class="card"><h2 id="idr">0</h2><span>IDR</span></div>
-</div>
-
-<div class="drop" id="drop">📄 Arraste seus PDFs aqui</div>
+<div class="drop" id="drop">Arraste PDFs aqui</div>
 
 <button onclick="processar()">Processar</button>
-<button onclick="excel()">Excel</button>
-<button onclick="zip()">ZIP</button>
-<button onclick="juntar()">Juntar Motorista</button>
-<button onclick="limpar()">Limpar</button>
+<button onclick="baixarZIP()">ZIP</button>
+<button onclick="exportarExcel()">Excel</button>
 
-<br><br>
-<input id="busca" placeholder="Buscar..." oninput="filtrar()">
+<input placeholder="Buscar..." id="busca" oninput="filtrar()">
 
 <table>
 <thead>
@@ -99,209 +76,126 @@ th{background:#1e293b}
 <tbody id="tabela"></tbody>
 </table>
 
-<div class="hist">
-<h3>📜 Histórico</h3>
-<ul id="hist"></ul>
-</div>
-
 <script>
+
 pdfjsLib.GlobalWorkerOptions.workerSrc =
 "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 let arquivos=[];
-let resultados=[];
+let dados=[];
 
 // DRAG
 drop.ondrop=e=>{
   e.preventDefault();
   arquivos=[...e.dataTransfer.files];
-  alert("Arquivos carregados: "+arquivos.length);
 };
+
 drop.ondragover=e=>e.preventDefault();
+
+// EXTRAIR TEXTO
+async function ler(file){
+  const pdf = await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  let texto="";
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const content=await page.getTextContent();
+    texto+=content.items.map(i=>i.str).join(" ");
+  }
+  return texto;
+}
 
 // EXTRATOR INTELIGENTE
 function extrair(texto){
 
   let cte =
-    (texto.match(/NÚMERO\s+([\d\.]+)/i) ||
-     texto.match(/N[ÚU]MERO:\s*(\d+)/i) ||
-     [])[1] || "SEM";
+    (texto.match(/NÚMERO\s+(\d+)/i)||[])[1] || "SEM";
 
   let m = texto.match(/(IDR?)\s+([A-Z0-9\-]+)/i);
   let tipo = m ? m[1] : "ID";
   let id = m ? m[2] : "SEM";
 
   let motorista =
-    (texto.match(/Motorista:\s*(.*?)\s*-/i) ||
-     texto.match(/Condutor:\s*(.*?)\s*CPF/i) ||
-     [])[1] || "SEM"; let data =
-    (texto.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || "";
+    (texto.match(/Motorista:\s*(.*?)\s*-/i)||[])[1] || "SEM";
 
-  if(data){
-    let p=data.split("/");
-    data = p[0]+"-"+p[1];
-  }
+  motorista = motorista.trim();
 
   let erros=[];
-  if(cte==="SEM") erros.push("CTE");
-  if(id==="SEM") erros.push("ID");
-  if(motorista==="SEM") erros.push("MOTORISTA");
+  if(cte==="SEM") erros.push(1);
+  if(id==="SEM") erros.push(1);
 
-  return {cte,tipo,id,motorista,pedido,carga,data,erros};
-}
-
-// EXTRAIR TEXTO
-async function txt(file){
-  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
-  let t="";
-  for(let i=1;i<=pdf.numPages;i++){
-    const p=await pdf.getPage(i);
-    const c=await p.getTextContent();
-    t+=c.items.map(i=>i.str).join(" ");
-  }
-  return t;
+  return {cte,tipo,id,motorista,erros};
 }
 
 // PROCESSAR
 async function processar(){
-  resultados=[];
+  dados=[];
   tabela.innerHTML="";
 
   for(let f of arquivos){
-    let texto=await txt(f);
-    let d=extrair(texto);
+    let texto = await ler(f);
+    let d = extrair(texto);
 
-    let nome=`CTE ${d.cte}`;
-    nome+=` - ${d.tipo} ${d.id}`;
-
-    if(d.pedido) nome+=` - PED ${d.pedido}`;
-    if(d.carga) nome+=` - C ${d.carga}`;
-    if(d.data) nome+=` - ${d.data}`;
-
-    nome+=` - ${d.motorista}.pdf`;
-
-    d.nome=nome;
+    d.nome=`CTE ${d.cte} - ${d.tipo} ${d.id} - ${d.motorista}.pdf`;
     d.file=f;
 
-    resultados.push(d);
+    dados.push(d);
   }
 
   render();
-  salvarHist();
 }
 
 // RENDER
 function render(){
-  let t=0,idCount=0,idrCount=0;
+  tabela.innerHTML="";
 
-  resultados.forEach(r=>{
-    t++;
-    if(r.tipo==="IDR") idrCount++; else idCount++;
-
+  dados.forEach(d=>{
     tabela.innerHTML+=`
-    <tr class="${r.erros.length?'erro':''}">
-      <td>${r.cte}</td>
-      <td class="${r.tipo==='IDR'?'idr':''}">
-        ${r.tipo} ${r.id}
+    <tr class="${d.erros.length?'erro':''}">
+      <td>${d.cte}</td>
+      <td class="${d.tipo==='IDR'?'idr':''}">
+        ${d.tipo} ${d.id}
       </td>
-      <td>${r.motorista}</td>
-      <td>${r.nome}</td>
+      <td>${d.motorista}</td>
+      <td>${d.nome}</td>
     </tr>`;
   });
-
-  tot.innerText=t;
-  id.innerText=idCount;
-  idr.innerText=idrCount;
-
-  let erros = resultados.filter(x=>x.erros.length).length;
-  if(erros) alert("⚠️ "+erros+" arquivo(s) com erro");
 }
 
 // FILTRO
 function filtrar(){
   let t=busca.value.toLowerCase();
+
   document.querySelectorAll("#tabela tr").forEach(tr=>{
-    tr.style.display=tr.innerText.toLowerCase().includes(t)?"":"none";
+    tr.style.display =
+      tr.innerText.toLowerCase().includes(t) ? "" : "none";
   });
 }
 
 // ZIP
-async function zip(){
-  let zip=new JSZip();
-  for(let r of resultados){
-    zip.file(r.nome,await r.file.arrayBuffer());
+async function baixarZIP(){
+  const zip = new JSZip();
+
+  for(let d of dados){
+    const bytes = await d.file.arrayBuffer();
+    zip.file(d.nome, bytes);
   }
-  let blob=await zip.generateAsync({type:"blob"});
-  let a=document.createElement("a");
+
+  const blob = await zip.generateAsync({type:"blob"});
+  const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="CTEs.zip";
   a.click();
 }
 
 // EXCEL
-function excel(){
-  let ws=XLSX.utils.json_to_sheet(resultados);
-  let wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Dados");
-  XLSX.writeFile(wb,"CTEs.xlsx");
+function exportarExcel(){
+  let ws = XLSX.utils.json_to_sheet(dados);
+  let wb = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(wb, ws, "dados");
+  XLSX.writeFile(wb, "CTEs.xlsx");
 }
 
-// JUNTAR
-async function juntar(){
-  const { PDFDocument } = PDFLib;
-  let grupos={};
-
-  resultados.forEach(r=>{
-    if(!grupos[r.motorista]) grupos[r.motorista]=[];
-    grupos[r.motorista].push(r);
-  });
-
-  for(let m in grupos){
-    let pdfFinal=await PDFDocument.create();
-
-    for(let i of grupos[m]){
-      let pdf=await PDFDocument.load(await i.file.arrayBuffer());
-      let pags=await pdfFinal.copyPages(pdf,pdf.getPageIndices());
-      pags.forEach(p=>pdfFinal.addPage(p));
-    }
-
-    let bytes=await pdfFinal.save();
-    let a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([bytes]));
-    a.download="CTEs "+m+".pdf";
-    a.click();
-  }
-}
-
-// HISTÓRICO
-function salvarHist(){
-  let h=JSON.parse(localStorage.getItem("hist")||"[]");
-
-  h.unshift({
-    data:new Date().toLocaleString(),
-    total:resultados.length
-  });
-
-  localStorage.setItem("hist",JSON.stringify(h.slice(0,10)));
-  mostrarHist();
-}
-
-function mostrarHist(){
-  let h=JSON.parse(localStorage.getItem("hist")||"[]");
-  hist.innerHTML="";
-  h.forEach(x=>{
-    hist.innerHTML+=`<li>${x.data} - ${x.total} arquivos</li>`;
-  });
-}
-
-mostrarHist();
-
-// LIMPAR
-function limpar(){
-  arquivos=[];
-  resultados=[];
-  tabela.innerHTML="";
-}
 </script>
 
 </body>
